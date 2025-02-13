@@ -1,44 +1,59 @@
-from flask import Flask, request, jsonify
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+# from pydantic import BaseModel
 import os
 
-app = Flask(__name__)
+app = FastAPI()
 
-@app.route('/run', methods=['POST'])
-def run_task():
-    task_description = request.args.get('task')
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins; you can restrict this to specific domains
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allows all headers
+)
 
-    # Example logic for processing the task
-    if not task_description:
-        return jsonify({"error": "Task description is required"}), 400
+@app.get("/")
+def home(): 
+    return {"message": "Hello!"}
 
-    try:
-        # Here, you can call a function that processes the task, for example, using an LLM
-        result = execute_task(task_description)  # Replace with actual task logic
-        return jsonify({"message": "Task executed successfully", "result": result}), 200
-    except Exception as e:
-        return jsonify({"error": f"Agent failed to execute task: {str(e)}"}), 500
-
-@app.route('/read', methods=['GET'])
-def read_file():
-    file_path = request.args.get('path')
-
-    # Check if the file exists
-    if not file_path or not os.path.exists(file_path):
-        return '', 404
-
-    try:
-        with open(file_path, 'r') as file:
-            content = file.read()
-        return content, 200
-    except Exception as e:
-        return jsonify({"error": f"Error reading file: {str(e)}"}), 500
-
-def execute_task(task_description):
-    # Simulate task execution, potentially calling an LLM or processing logic here
-    if task_description.lower() == "example task":
-        return "Task executed successfully"
+# A mock function to simulate task execution (replace with LLM logic in your real application)
+def execute_task(task_description: str):
+    # Simulate task execution; replace this with actual logic (e.g., call to an LLM)
+    if task_description == "example":
+        return "Task executed successfully: Example task"
     else:
         raise ValueError("Invalid task description")
 
-if __name__ == '__main__':
-    app.run(debug=True)
+@app.post("/run")
+async def run_task(task: str = Query(..., description="Task description")):
+    try:
+        # Attempt to execute the task
+        result = execute_task(task)
+        return {"message": "Task executed successfully", "result": result}
+    except ValueError as e:
+        # Handle task-related errors
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        # Catch all other exceptions (e.g., agent errors)
+        raise HTTPException(status_code=500, detail=f"Agent failed to execute task: {str(e)}")
+
+@app.get("/read")
+async def read_file(path: str = Query(..., description="File path")):
+    # Check if the file exists
+    if os.path.exists(path):
+        try:
+            # Read and return the file content
+            with open(path, 'r') as file:
+                file_content = file.read()
+            return file_content
+        except Exception as e:
+            # In case of an error reading the file, return HTTP 500
+            raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")
+    else:
+        # File does not exist, return HTTP 404
+        raise HTTPException(status_code=404, detail="File not found")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, port=8000)
