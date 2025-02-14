@@ -13,6 +13,7 @@ from PIL import Image
 import numpy as np
 import sqlite3
 import base64
+from urllib.parse import unquote
 
 app = FastAPI()
 
@@ -20,6 +21,9 @@ app = FastAPI()
 async def run_task(task: str = Query(...)):
     if not task:
         raise HTTPException(status_code=400, detail="Task description required")
+    
+    # Ensure the task is properly decoded to handle special characters
+    task = unquote(task)
     
     # Use the LLM to parse the task instruction.
     try:
@@ -52,10 +56,8 @@ async def run_task(task: str = Query(...)):
             result = handle_task_A9()
         elif task_code == "A10":
             result = handle_task_A10()
-        # Future tasks (A4 - A10) can be integrated similarly.
         else:
-            # If LLM returned UNKNOWN or an unsupported task code.
-            raise Exception("Unrecognized or unsupported task code returned by LLM.")
+            raise Exception("Unrecognized or unsupported task code.")
         
         return {"status": "success", "result": result}
     except Exception as e:
@@ -278,43 +280,29 @@ def handle_task_A4():
     return {"sorted_contacts": sorted_contacts}
 
 def handle_task_A5():
-    """
-    Write the first line of the 10 most recent .log files in /data/logs/ to /data/logs-recent.txt, most recent first.
-    """
-    logs_dir = os.path.join(os.getcwd(), "data", "logs")
-    output_file = os.path.join(os.getcwd(), "data", "logs-recent.txt")
-
-    # Ensure the logs directory exists
-    if not os.path.exists(logs_dir):
-        raise Exception(f"Logs directory not found: {logs_dir}")
-
-    # List all .log files and sort them numerically based on the filename
-    log_files = sorted(
-        [f for f in os.listdir(logs_dir) if f.endswith(".log")],
-        key=lambda x: int(x.replace("log-", "").replace(".log", "")), 
-        reverse=True  # Most recent first
-    )
-
-    # Pick the 10 most recent logs
-    recent_logs = log_files[:10]
-
-    # Read the first line of each log file
-    first_lines = []
-    for log_file in recent_logs:
-        log_path = os.path.join(logs_dir, log_file)
-        try:
-            with open(log_path, "r") as f:
-                first_line = f.readline().strip()
-                first_lines.append(first_line)
-        except Exception as e:
-            first_lines.append(f"Error reading {log_file}: {str(e)}")
-
-    # Write the first lines to logs-recent.txt
-    with open(output_file, "w") as f:
-        f.write("\n".join(first_lines) + "\n")
-
-    return {"written_file": output_file, "first_lines": first_lines}
-
+    log_dir = "./data/logs"
+    output_file = "./data/logs-recent.txt"
+    
+    if not os.path.isdir(log_dir):
+        raise FileNotFoundError("Logs directory not found")
+    
+    try:
+        log_files = sorted(
+            [f for f in os.listdir(log_dir) if f.endswith(".log")],
+            key=lambda f: os.path.getmtime(os.path.join(log_dir, f)),
+            reverse=True
+        )[:10]
+        
+        with open(output_file, "w", encoding="utf-8") as outfile:
+            for log_file in log_files:
+                log_path = os.path.join(log_dir, log_file)
+                with open(log_path, "r", encoding="utf-8") as infile:
+                    first_line = infile.readline().strip()
+                    outfile.write(first_line + "\n")
+        
+        return "Recent logs extracted successfully."
+    except Exception as e:
+        raise RuntimeError(f"Error processing log files: {e}")
 
 def handle_task_A6():
     """
@@ -687,6 +675,6 @@ def passes_luhn(number_str: str) -> bool:
     
     return sum(digits) % 10 == 0
 
-@app.get("/debug-token")
-async def debug_token():
-    return {"AIPROXY_TOKEN": os.environ.get("AIPROXY_TOKEN")}
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, port=8000)
